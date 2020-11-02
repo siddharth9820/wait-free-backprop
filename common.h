@@ -1,6 +1,11 @@
-#include<stdio.h>
-#include<cudnn.h>
-#include<cuda.h>
+#ifndef COMMON_H
+#define COMMON_H
+
+#include <iostream>
+#include <cudnn.h>
+#include <cuda.h>
+#include <random>
+
 
 #define MU 0 
 #define SIGMA 1
@@ -24,3 +29,5 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
+
+#endif

@@ -2,8 +2,6 @@
 #define CONVOLUTION_H_
 
 #include "generic_layer.h"
-#include <cudnn.h>
-#include <cuda.h>
 
 class Convolution : public Layer 
 {
@@ -19,11 +17,14 @@ class Convolution : public Layer
         cudnnConvolutionBwdDataAlgo_t data_algorithm; /*!< cudnn descriptor for backward pass data algorithm. */
         int filter_shape[3];
         size_t workspace_size;
+        
+        float * workspace, * params;
         Convolution(int kernel_size[], int input_size[], cudnnHandle_t handle);
-        void forward(float * input_activations);
+        void forward(float * input_activations, float * output_activations);
         void backward(float * output_gradients);
         int get_workspace_size();
         void allocate_internal_memory();
+        int get_filter_size();
 };
 
 #endif

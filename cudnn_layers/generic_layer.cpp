@@ -1,5 +1,4 @@
 #include "generic_layer.h"
-#include <random>
 
 void Layer::get_input_shape(int shape[])
 {

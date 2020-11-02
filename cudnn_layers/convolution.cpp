@@ -1,6 +1,5 @@
 #include "convolution.h"
-#include <iostream>
-#include "../common.h"
+
 
 Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t handle)
 {
@@ -16,7 +15,8 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
     int output_channels = kernel_size[2];
     int kernel_height = kernel_size[0];
     int kernel_width = kernel_size[1];
-    
+    this->handle = handle;
+
     // make input descriptor
     checkCUDNN(cudnnCreateTensorDescriptor(&input_descriptor));
     checkCUDNN(cudnnSetTensor4dDescriptor(input_descriptor,
@@ -114,37 +114,56 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
     workspace_size = std::max(workspace_size, backward_data_workspace_size);
 }
 
-void Convolution::forward(float * input_activations)
-{
-    std::cout << "Convolution Forward Pass" << std::endl;
-}
-
-void Convolution::backward(float * output_gradients)
-{
-    std::cout << "Convolution Backward Pass" << std::endl;
-}
-
 int Convolution::get_workspace_size()
 {
     return workspace_size;
 }
 
-void allocate_internal_memory()
+int Convolution::get_filter_size()
+{
+    return input_shape[1] * filter_shape[0] * filter_shape[1] * filter_shape[2] * sizeof(float);
+}
+
+void Convolution::allocate_internal_memory()
 {
     //allocate params memory 
-  float* init_params = (float*) malloc(this->get_output_size());
-  std::normal_distribution<float> distribution(MU,SIGMA);
-  std::default_random_engine generator;
-
-  int dim1 = filter_shape[1]*input_shape[1];
-  int dim2 = filter_shape[0]*dim1;
-
-  for(int ochannel = 0; ochannel < filter_shape[2]; ochannel++)
-    for(int row=0;row<filter_shape[0];row++)
-      for(int col=0;col<filter_shape[1];col++)
-        for(int ichannel=0;ichannel < input_shape[1]; ichannel++)
-          init_params[ochannel*dim2 + row*dim1 + col*input_shape[1] + ichannel] = distribution(generator);
+    int filter_size = this->get_filter_size();
+    std::cout << "Parameter memory = " << filter_size << " bytes" << std::endl;
+    float* cpu_params = (float*) malloc(filter_size);
+    
+    std::normal_distribution<float> distribution(MU,SIGMA);
+    std::default_random_engine generator;
 
 
-  checkCUDA(cudaMemcpy(d_kernel,init_params,ochannels*ikernel_height*ikernel_width*ichannels*sizeof(float),cudaMemcpyHostToDevice));
+    for(int i=0; i<filter_size/sizeof(float); i++)
+        cpu_params[i] = distribution(generator);
+
+    checkCUDA(cudaMalloc(&params, filter_size));
+    checkCUDA(cudaMemcpy(params,cpu_params,filter_size,cudaMemcpyHostToDevice));
+
+    //allocate worksapce memory
+    checkCUDA(cudaMalloc(&workspace, workspace_size))
+}
+
+void Convolution::forward(float * input_activations, float * output_activations)
+{
+    float alpha=1, beta=0;
+    checkCUDNN(cudnnConvolutionForward(handle,
+                                       &alpha,
+                                       input_descriptor,
+                                       input_activations,
+                                       kernel_descriptor,
+                                       params,
+                                       convolution_descriptor,
+                                       convolution_algorithm,
+                                       workspace,
+                                       workspace_size,
+                                       &beta,
+                                       output_descriptor,
+                                       output_activations));
+}
+
+void Convolution::backward(float * output_gradients, float * input_gradients)
+{
+    std::cout << "Convolution Backward Pass" << std::endl;
 }

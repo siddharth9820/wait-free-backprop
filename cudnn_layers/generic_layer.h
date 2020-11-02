@@ -5,13 +5,15 @@
 #define FC_LAYER 1
 #define ReLU_LAYER 2
 
+#include "../common.h"
+
 class Layer
 {   
     public:
         int input_shape[4];
         int output_shape[4];
         int type;
-        virtual void forward(float * input_activations)=0;
+        virtual void forward(float * input_activations, float * output_activations)=0;
         virtual void backward(float * output_gradients)=0;
         void get_input_shape(int shape[]);
         void get_output_shape(int shape[]);
