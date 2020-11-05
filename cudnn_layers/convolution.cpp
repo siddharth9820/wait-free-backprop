@@ -119,7 +119,7 @@ int Convolution::get_workspace_size()
     return workspace_size;
 }
 
-int Convolution::get_filter_size()
+int Convolution::get_param_size()
 {
     return input_shape[1] * filter_shape[0] * filter_shape[1] * filter_shape[2] * sizeof(float);
 }
@@ -127,7 +127,7 @@ int Convolution::get_filter_size()
 void Convolution::allocate_internal_memory()
 {
     //allocate params memory 
-    int filter_size = this->get_filter_size();
+    int filter_size = this->get_param_size();
     std::cout << "Parameter memory = " << filter_size << " bytes" << std::endl;
     float* cpu_params = (float*) malloc(filter_size);
     
@@ -140,9 +140,11 @@ void Convolution::allocate_internal_memory()
 
     checkCUDA(cudaMalloc(&params, filter_size));
     checkCUDA(cudaMemcpy(params,cpu_params,filter_size,cudaMemcpyHostToDevice));
+    checkCUDA(cudaMalloc(&params_gradients, filter_size));
 
     //allocate worksapce memory
-    checkCUDA(cudaMalloc(&workspace, workspace_size))
+    checkCUDA(cudaMalloc(&workspace, workspace_size));
+
 }
 
 void Convolution::forward(float * input_activations, float * output_activations)
@@ -163,7 +165,39 @@ void Convolution::forward(float * input_activations, float * output_activations)
                                        output_activations));
 }
 
-void Convolution::backward(float * output_gradients, float * input_gradients)
+void Convolution::backward(float * output_gradients, float * input_gradients, float * input_activations)
 {
-    std::cout << "Convolution Backward Pass" << std::endl;
+    float alpha=1, beta=0;
+    checkCUDNN(cudnnConvolutionBackwardData(
+    handle,
+    &alpha,
+    kernel_descriptor,
+    params,
+    output_descriptor,
+    output_gradients,
+    convolution_descriptor,
+    data_algorithm,
+    workspace,
+    workspace_size,
+    &beta,
+    input_descriptor,
+    input_gradients
+    ));
+
+    checkCUDNN(cudnnConvolutionBackwardFilter(
+        handle,
+        &alpha,
+        input_descriptor,
+        input_activations,
+        output_descriptor,
+        output_gradients,
+        convolution_descriptor,
+        filter_algorithm,
+        workspace,
+        workspace_size,
+        &beta,
+        kernel_descriptor,
+        params_gradients
+    ));
+
 }

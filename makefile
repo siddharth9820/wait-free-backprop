@@ -1,10 +1,10 @@
 home = /cfarhomes/ssingh37/cudnn
-layers = convolution.o generic_layer.o
+layers = convolution.o generic_layer.o fc.o relu.o
 layer_headers = $(home)/cudnn_layers/convolution.h
 
 cc = nvcc
 flags = -arch=sm_35 -std=c++11
-nvidia_flags = -lcudnn -lcublas
+nvidia_flags = -lcudnn -lcublas 
 CFLAGS = -I$(CUDNN_INCDIR)
 LDFLAGS = -L$(CUDNN_LIBDIR)
 

@@ -18,13 +18,13 @@ class Convolution : public Layer
         int filter_shape[3];
         size_t workspace_size;
         
-        float * workspace, * params;
+
         Convolution(int kernel_size[], int input_size[], cudnnHandle_t handle);
         void forward(float * input_activations, float * output_activations);
-        void backward(float * output_gradients);
+        void backward(float * output_gradients, float * input_gradients, float * input_activations);
         int get_workspace_size();
         void allocate_internal_memory();
-        int get_filter_size();
+        int get_param_size();
 };
 
 #endif

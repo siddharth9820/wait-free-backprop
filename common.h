@@ -5,10 +5,11 @@
 #include <cudnn.h>
 #include <cuda.h>
 #include <random>
+#include <cublas_v2.h>
 
 
 #define MU 0 
-#define SIGMA 1
+#define SIGMA 0.1
 
 #define checkCUDNN(expression)                               \
   {                                                          \
@@ -29,5 +30,15 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
+
+#define checkCUBLAS(expression)                              \
+  {                                                          \
+    cublasStatus_t status = (expression);                     \
+    if (status != CUBLAS_STATUS_SUCCESS) {                    \
+      std::cerr << "Error on line " << __LINE__ << ": "      \
+                << cublasGetErrorString(status) << std::endl; \
+      std::exit(EXIT_FAILURE);                               \
+    }                                                        \
+  }
 
 #endif

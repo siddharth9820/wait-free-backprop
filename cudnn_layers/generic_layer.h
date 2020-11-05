@@ -13,8 +13,9 @@ class Layer
         int input_shape[4];
         int output_shape[4];
         int type;
+        float * workspace, * params, *params_gradients;
         virtual void forward(float * input_activations, float * output_activations)=0;
-        virtual void backward(float * output_gradients)=0;
+        virtual void backward(float * output_gradients, float * input_gradients, float * input_activations)=0;
         void get_input_shape(int shape[]);
         void get_output_shape(int shape[]);
         int get_type();
@@ -22,6 +23,7 @@ class Layer
         int get_output_size();
         virtual int get_workspace_size()=0;
         virtual void allocate_internal_memory()=0;
+        virtual int get_param_size()=0;
 };
 
 #endif
