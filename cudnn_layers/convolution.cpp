@@ -165,7 +165,7 @@ void Convolution::forward(float * input_activations, float * output_activations)
                                        output_activations));
 }
 
-void Convolution::backward(float * output_gradients, float * input_gradients, float * input_activations)
+void Convolution::backward(float * output_gradients, float * input_gradients, float * input_activations, float * output_activations)
 {
     float alpha=1, beta=0;
     checkCUDNN(cudnnConvolutionBackwardData(

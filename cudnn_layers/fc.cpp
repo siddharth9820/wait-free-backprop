@@ -82,7 +82,7 @@ void FC::forward(float * input_activations, float * output_activations)
             ));
 }
 
-void FC::backward(float * output_gradients, float * input_gradients, float * input_activations)
+void FC::backward(float * output_gradients, float * input_gradients, float * input_activations, float * output_activations)
 {
     int output_height = output_shape[1];
     int input_height = input_shape[1];
