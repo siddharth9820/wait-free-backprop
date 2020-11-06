@@ -5,173 +5,6 @@
 #include <iostream>
 #include "common.h"
 
-void check_conv(cudnnHandle_t cudnn, int filter_size[], int input_shape[])
-{
-    Layer * conv_layer = new Convolution(filter_size, input_shape, cudnn);
-    
-    std::cout << conv_layer->get_type() << std::endl;
-    int output_shape[4];
-    conv_layer->get_output_shape(output_shape);
-
-    std::cout << "Output Shape" << std::endl;
-    for(int i=0;i<4;i++)std::cout << output_shape[i] << " " ;
-    std::cout << std::endl;
-
-    std::cout << "Workspace Size: " << conv_layer->get_workspace_size() << std::endl;
-    std::cout << "Input Size: " << conv_layer->get_input_size() << std::endl;
-    std::cout << "Output Size: " << conv_layer->get_output_size() << std::endl;
-    conv_layer->allocate_internal_memory();
-
-    std::normal_distribution<float> distribution(MU,SIGMA);
-    std::default_random_engine generator;
-
-    float * input, * output, * grad_output, * grad_input, * d_input, * d_output, * d_grad_input, * d_grad_output;
-    int input_size = conv_layer->get_input_size(), output_size = conv_layer->get_output_size();
-    
-    input = (float*)malloc(input_size);
-    grad_output = (float*)malloc(output_size);
-
-    for(int i=0;i<input_size/sizeof(float);i++){
-        input[i] = distribution(generator);
-    }
-
-    for(int i=0;i<output_size/sizeof(float);i++){
-        grad_output[i] = distribution(generator);
-    }
-    output = (float*)malloc(output_size);
-    grad_input = (float*)malloc(input_size);
-
-    checkCUDA(cudaMalloc(&d_input, input_size));
-    checkCUDA(cudaMalloc(&d_output, output_size));
-    checkCUDA(cudaMemcpy(d_input, input, input_size, cudaMemcpyHostToDevice));
-    
-    checkCUDA(cudaMalloc(&d_grad_input, input_size));
-    checkCUDA(cudaMalloc(&d_grad_output, output_size));
-    checkCUDA(cudaMemcpy(d_grad_output, grad_output, output_size, cudaMemcpyHostToDevice));
-    
-    conv_layer->forward(d_input, d_output);
-    conv_layer->backward(d_grad_output, d_grad_input, d_input, d_output);
-
-    checkCUDA(cudaMemcpy(grad_input, d_grad_input, input_size, cudaMemcpyDeviceToHost));
-}
-
-void check_FC(cublasHandle_t cublas, int output_dim, int input_shape[])
-{
-    Layer * fc_layer = new FC(output_dim, input_shape, cublas);
-    
-    std::cout << fc_layer->get_type() << std::endl;
-    int output_shape[4];
-    fc_layer->get_output_shape(output_shape);
-
-    std::cout << "Output Shape" << std::endl;
-    for(int i=0;i<4;i++)std::cout << output_shape[i] << " " ;
-    std::cout << std::endl;
-
-    std::cout << "Workspace Size: " << fc_layer->get_workspace_size() << std::endl;
-    std::cout << "Input Size: " << fc_layer->get_input_size() << std::endl;
-    std::cout << "Output Size: " << fc_layer->get_output_size() << std::endl;
-    fc_layer->allocate_internal_memory();
-
-    std::normal_distribution<float> distribution(MU,SIGMA);
-    std::default_random_engine generator;
-
-    float * input, * output, * grad_output, * grad_input, * d_input, * d_output, * d_grad_input, * d_grad_output;
-    int input_size = fc_layer->get_input_size(), output_size = fc_layer->get_output_size();
-    
-    input = (float*)malloc(input_size);
-    grad_output = (float*)malloc(output_size);
-
-    for(int i=0;i<input_size/sizeof(float);i++){
-        input[i] = distribution(generator);
-    }
-
-    for(int i=0;i<output_size/sizeof(float);i++){
-        grad_output[i] = distribution(generator);
-    }
-    output = (float*)malloc(output_size);
-    grad_input = (float*)malloc(input_size);
-
-    checkCUDA(cudaMalloc(&d_input, input_size));
-    checkCUDA(cudaMalloc(&d_output, output_size));
-    checkCUDA(cudaMemcpy(d_input, input, input_size, cudaMemcpyHostToDevice));
-    
-    checkCUDA(cudaMalloc(&d_grad_input, input_size));
-    checkCUDA(cudaMalloc(&d_grad_output, output_size));
-    checkCUDA(cudaMemcpy(d_grad_output, grad_output, output_size, cudaMemcpyHostToDevice));
-    
-    fc_layer->forward(d_input, d_output);
-    fc_layer->backward(d_grad_output, d_grad_input, d_input, d_output);
-
-    // checkCUDA(cudaMemcpy(output, d_output, output_size, cudaMemcpyDeviceToHost));
-    
-    // for(int i=0;i<output_size/sizeof(float);i++) std::cout << output[i] << " ";
-    // std::cout << std::endl;
-
-    checkCUDA(cudaMemcpy(grad_input, d_grad_input, input_size, cudaMemcpyDeviceToHost));
-    
-    // for(int i=0;i<input_size/sizeof(float);i++) std::cout << grad_input[i] << " ";
-    // std::cout << std::endl;
-
-}
-
-void check_ReLU(cudnnHandle_t cudnn, int input_shape[])
-{
-    Layer * relu_layer = new ReLU(input_shape, cudnn);
-    
-    std::cout << relu_layer->get_type() << std::endl;
-    int output_shape[4];
-    relu_layer->get_output_shape(output_shape);
-
-    std::cout << "Output Shape" << std::endl;
-    for(int i=0;i<4;i++)std::cout << output_shape[i] << " " ;
-    std::cout << std::endl;
-
-    std::cout << "Workspace Size: " << relu_layer->get_workspace_size() << std::endl;
-    std::cout << "Input Size: " << relu_layer->get_input_size() << std::endl;
-    std::cout << "Output Size: " << relu_layer->get_output_size() << std::endl;
-    relu_layer->allocate_internal_memory();
-
-    std::normal_distribution<float> distribution(MU,SIGMA);
-    std::default_random_engine generator;
-
-    float * input, * output, * grad_output, * grad_input, * d_input, * d_output, * d_grad_input, * d_grad_output;
-    int input_size = relu_layer->get_input_size(), output_size = relu_layer->get_output_size();
-    
-    input = (float*)malloc(input_size);
-    grad_output = (float*)malloc(output_size);
-
-    for(int i=0;i<input_size/sizeof(float);i++){
-        input[i] = distribution(generator);
-    }
-
-    for(int i=0;i<output_size/sizeof(float);i++){
-        grad_output[i] = distribution(generator);
-    }
-    output = (float*)malloc(output_size);
-    grad_input = (float*)malloc(input_size);
-
-    checkCUDA(cudaMalloc(&d_input, input_size));
-    checkCUDA(cudaMalloc(&d_output, output_size));
-    checkCUDA(cudaMemcpy(d_input, input, input_size, cudaMemcpyHostToDevice));
-    
-    checkCUDA(cudaMalloc(&d_grad_input, input_size));
-    checkCUDA(cudaMalloc(&d_grad_output, output_size));
-    checkCUDA(cudaMemcpy(d_grad_output, grad_output, output_size, cudaMemcpyHostToDevice));
-    
-    relu_layer->forward(d_input, d_output);
-    relu_layer->backward(d_grad_output, d_grad_input, d_input, d_output);
-
-    // checkCUDA(cudaMemcpy(output, d_output, output_size, cudaMemcpyDeviceToHost));
-    
-    // for(int i=0;i<output_size/sizeof(float);i++) std::cout << output[i] << " ";
-    // std::cout << std::endl;
-
-    // checkCUDA(cudaMemcpy(grad_input, d_grad_input, input_size, cudaMemcpyDeviceToHost));
-    
-    // for(int i=0;i<input_size/sizeof(float);i++) std::cout << grad_input[i] << " ";
-    // std::cout << std::endl;
-}
-
 
 
 int main(int argc, const char* argv[])
@@ -219,8 +52,9 @@ int main(int argc, const char* argv[])
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
     int input_size = network[0]->get_input_size();
-    float * d_batch, * batch;
+    float * d_batch, *d_grad_batch ,* batch;
     checkCUDA(cudaMalloc(&d_batch, input_size));
+    checkCUDA(cudaMalloc(&d_grad_batch, input_size));
     batch = (float*)malloc(input_size);
     std::normal_distribution<float> distribution(MU,SIGMA);
     std::default_random_engine generator;
@@ -231,11 +65,12 @@ int main(int argc, const char* argv[])
     for(int i=0; i<7; i++)network[i]->allocate_internal_memory();
 
     //Step 3 - Allocate output activation buffers for each layer
-    float * output_activations[7];
+    float * output_activations[7], * grad_output_activations[7];
     for(int i=0; i<7; i++)
     {
         int output_size = network[i]->get_output_size();
         checkCUDA(cudaMalloc(&output_activations[i], output_size));
+        checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
     }
 
     //Step 4 - Do a forward Pass 
@@ -251,6 +86,8 @@ int main(int argc, const char* argv[])
     float * output = (float*)malloc(output_size);
     checkCUDA(cudaMemcpy(output, output_activations[6], output_size, cudaMemcpyDeviceToHost));
 
+    std::cout << "========= Printing output of final layer ==================" << std::endl;
+
     for(int i=0; i<input_shape[0]; i++){
         for(int j=0;j<input_shape[1];j++){
             std::cout << output[i*input_shape[1] + j ] << " ";
@@ -258,5 +95,29 @@ int main(int argc, const char* argv[])
         std::cout << std::endl;
     }
 
+    //Step 6 - Use random gradient for output right now
+    float * grad_output = output;
+    for(int i=0; i<output_size/sizeof(float); i++) grad_output[i] = distribution(generator);
+    checkCUDA(cudaMemcpy(grad_output_activations[6], grad_output, output_size, cudaMemcpyHostToDevice));
 
+    //Step 7 - Do backward Pass 
+    for(int i=6; i>=0; i--)
+    {
+        if(i==0)network[i]->backward(grad_output_activations[i], d_grad_batch, d_batch, output_activations[i]);
+        else network[i]->backward(grad_output_activations[i], grad_output_activations[i-1], output_activations[i-1], output_activations[i]);
+    }
+
+    std::cout << "========= Printing gradients of layer 6 ==================" << std::endl;
+    
+    
+    //Print gradient of Layer 6 
+    int parameter_size = network[6]->get_param_size();
+    float * gradients = (float*)malloc(parameter_size);
+    checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients, parameter_size, cudaMemcpyDeviceToHost));
+    for(int i=0; i<parameter_size/sizeof(float); i++)
+        std::cout << gradients[i] << " ";
+
+    std::cout << std::endl;
+
+    //TODO :- now do an all reduce on gradients of all layers via NCCL
 }
