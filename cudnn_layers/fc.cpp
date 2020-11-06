@@ -19,7 +19,7 @@ const char* cublasGetErrorString(cublasStatus_t status)
 
 FC::FC(int output_size, int input_size[], cublasHandle_t handle)
 {
-    type = FC_LAYER;
+    type = ReLU_LAYER;
     input_shape[0] = input_size[0];
     input_shape[1] = input_size[1] * input_size[2] * input_size[3];
     input_shape[2] = input_shape[3] = 1;
