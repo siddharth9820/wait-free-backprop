@@ -24,5 +24,6 @@ $(MAIN_OBJS) : %.o : %.cpp $(LAYER_OBJS) makefile
 $(LAYER_OBJS): %.o: cudnn_layers/%.cpp cudnn_layers/%.h makefile
 	$(CC) -c $(CFLAGS) $(FLAGS) $< -o $@
 
+.PHONY: clean
 clean:
 	rm *.o $(BINS)
