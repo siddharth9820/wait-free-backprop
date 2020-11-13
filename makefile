@@ -7,10 +7,13 @@ MAIN_SRCS = single_gpu.cpp multi_gpu.cpp
 MAIN_OBJS = $(subst .cpp,.o,$(MAIN_SRCS))
 BINS = $(subst .cpp,,$(MAIN_SRCS))
 
+# Override this by setting the correspodning environment variable
+NCCL_HOME ?= /homes/cmsc818x-1uz3/nccl/build
+
 CC = nvcc -ccbin mpic++
-FLAGS = --std=c++11 -arch=sm_35 -lmpi -lm -lcudnn -lcublas -lrt -lcudart 
-CFLAGS = -I$(CUDNN_INCDIR)
-LDFLAGS = -L$(CUDNN_LIBDIR)64
+FLAGS = --std=c++11 -arch=sm_35 -lmpi -lm -lcudnn -lcublas -lrt -lcudart -lnccl
+CFLAGS = -I$(CUDNN_INCDIR) -I$(NCCL_HOME)/include
+LDFLAGS = -L$(CUDNN_LIBDIR)64 -L$(NCCL_HOME)/lib
 
 .PHONY: all
 all: $(BINS)

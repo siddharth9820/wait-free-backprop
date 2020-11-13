@@ -6,6 +6,7 @@
 
 #include "mpi.h"
 #include "cuda_runtime.h"
+#include "nccl.h"
 
 #include <unistd.h>
 #include <iostream>
@@ -70,10 +71,54 @@ int main(int argc, char* argv[])
     cublasHandle_t cublas;
     cublasCreate(&cublas);
 
+    /*
     // Assume each rank gets one gpu for now
     //local_rank = get_local_rank(my_rank, n_ranks);
     CUDACHECK(cudaSetDevice(0));
+  
+    ncclUniqueId id;
+    ncclComm_t comm;
+
+    //generating NCCL unique ID at one process and broadcasting it to all
+    if (my_rank == 0) ncclGetUniqueId(&id);
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
+
+    //initializing NCCL
+    CUDACHECK(cudaSetDevice(0));
+    NCCLCHECK(ncclCommInitRank(&comm, n_ranks, id, my_rank));
+    */
     
+    // demo start
+    local_rank = get_local_rank(my_rank, n_ranks);
+    
+    //each process is using two GPUs
+    int n_devs = 2;
+
+    cudaStream_t* s = (cudaStream_t*)malloc(sizeof(cudaStream_t)*n_devs);
+
+    //picking GPUs based on local_rank
+    for (int i = 0; i < n_devs; ++i) {
+        CUDACHECK(cudaSetDevice(local_rank*n_devs + i));
+        CUDACHECK(cudaStreamCreate(s+i));
+    }
+
+    ncclUniqueId id;
+    ncclComm_t comms[n_devs];
+
+    //generating NCCL unique ID at one process and broadcasting it to all
+    if (my_rank == 0) ncclGetUniqueId(&id);
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
+
+    //initializing NCCL, group API is required around ncclCommInitRank as it is
+    //called across multiple GPUs in each thread/process
+    NCCLCHECK(ncclGroupStart());
+    for (int i=0; i<n_devs; i++) {
+        CUDACHECK(cudaSetDevice(local_rank*n_devs + i));
+        NCCLCHECK(ncclCommInitRank(comms+i, n_ranks*n_devs, id, my_rank*n_devs + i));
+    }
+    NCCLCHECK(ncclGroupEnd());
+    // demo end
+
     // int filter_size[3] = {3, 3, 3};        //HWC
     // int input_shape[4] = {64, 1, 10, 10};  //NCHW
     // check_conv(cudnn, filter_size, input_shape);
@@ -196,4 +241,12 @@ int main(int argc, char* argv[])
     //TODO :- now do an all reduce on gradients of all layers via NCCL
    
     std::cout << "Rank " << my_rank << " done" << std::endl;
+    
+    //finalizing NCCL
+    for (int i=0; i<n_devs; i++) {
+        ncclCommDestroy(comms[i]);
+    }
+  
+    //finalizing MPI
+    MPICHECK(MPI_Finalize());
 }
