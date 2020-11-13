@@ -71,8 +71,8 @@ int main(int argc, char* argv[])
     cublasCreate(&cublas);
 
     // Assume each rank gets one gpu for now
-    local_rank = get_local_rank(my_rank, n_ranks);
-    CUDACHECK(cudaSetDevice(local_rank));
+    //local_rank = get_local_rank(my_rank, n_ranks);
+    CUDACHECK(cudaSetDevice(0));
     
     // int filter_size[3] = {3, 3, 3};        //HWC
     // int input_shape[4] = {64, 1, 10, 10};  //NCHW
@@ -134,7 +134,8 @@ int main(int argc, char* argv[])
     }
 
     //Step 4 - Do a forward Pass 
-    
+
+    std::cout << "Rank " << my_rank << " starting foward pass" << std::endl;   
     // first layer is special
     network[0]->forward(d_batch, output_activations[0]);
     for(int i=1;i<7;i++)
@@ -193,5 +194,6 @@ int main(int argc, char* argv[])
     std::cout << std::endl;
 
     //TODO :- now do an all reduce on gradients of all layers via NCCL
-    
+   
+    std::cout << "Rank " << my_rank << " done" << std::endl;
 }
