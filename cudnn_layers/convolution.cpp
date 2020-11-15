@@ -141,7 +141,7 @@ void Convolution::allocate_internal_memory()
     checkCUDA(cudaMalloc(&params, filter_size));
     checkCUDA(cudaMemcpy(params,cpu_params,filter_size,cudaMemcpyHostToDevice));
     checkCUDA(cudaMalloc(&params_gradients, filter_size));
-
+    checkCUDA(cudaMalloc(&params_gradients_nccl, filter_size));
     //allocate worksapce memory
     checkCUDA(cudaMalloc(&workspace, workspace_size));
 

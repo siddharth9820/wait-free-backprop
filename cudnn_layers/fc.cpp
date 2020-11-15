@@ -54,6 +54,7 @@ void FC::allocate_internal_memory()
 
     checkCUDA(cudaMalloc(&params, param_size));
     checkCUDA(cudaMalloc(&params_gradients, param_size));
+    checkCUDA(cudaMalloc(&params_gradients_nccl, param_size));
     checkCUDA(cudaMemcpy(params, cpu_params, param_size, cudaMemcpyHostToDevice));
     
 }

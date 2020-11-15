@@ -57,7 +57,6 @@ static int get_local_rank(int my_rank, int n_ranks) {
 
 int main(int argc, char* argv[])
 {
-    int size = 32*1024*1024;
 
     int my_rank, n_ranks, local_rank = 0;
 
@@ -66,65 +65,27 @@ int main(int argc, char* argv[])
     MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &my_rank));
     MPICHECK(MPI_Comm_size(MPI_COMM_WORLD, &n_ranks));
  
+   
+    // Assume each rank gets one gpu for now
+    local_rank = get_local_rank(my_rank, n_ranks);
+    std::cout << "My local rank : " << local_rank << std::endl;
+    CUDACHECK(cudaSetDevice(local_rank));
+    ncclUniqueId id;
+    ncclComm_t comm;
+    //generating NCCL unique ID at one process and broadcasting it to all
+    if (my_rank == 0) ncclGetUniqueId(&id);
+    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
+    //initializing NCCL
+    //CUDACHECK(cudaSetDevice(local_rank));
+    NCCLCHECK(ncclCommInitRank(&comm, n_ranks, id, my_rank));
+    
     cudnnHandle_t cudnn;
     cudnnCreate(&cudnn);
     cublasHandle_t cublas;
     cublasCreate(&cublas);
-
-    /*
-    // Assume each rank gets one gpu for now
-    //local_rank = get_local_rank(my_rank, n_ranks);
-    CUDACHECK(cudaSetDevice(0));
-  
-    ncclUniqueId id;
-    ncclComm_t comm;
-
-    //generating NCCL unique ID at one process and broadcasting it to all
-    if (my_rank == 0) ncclGetUniqueId(&id);
-    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
-
-    //initializing NCCL
-    CUDACHECK(cudaSetDevice(0));
-    NCCLCHECK(ncclCommInitRank(&comm, n_ranks, id, my_rank));
-    */
+    cudaStream_t nccl_comm_stream;
+    checkCUDA(cudaStreamCreate(&nccl_comm_stream));   
     
-    // demo start
-    local_rank = get_local_rank(my_rank, n_ranks);
-    
-    //each process is using two GPUs
-    int n_devs = 2;
-
-    cudaStream_t* s = (cudaStream_t*)malloc(sizeof(cudaStream_t)*n_devs);
-
-    //picking GPUs based on local_rank
-    for (int i = 0; i < n_devs; ++i) {
-        CUDACHECK(cudaSetDevice(local_rank*n_devs + i));
-        CUDACHECK(cudaStreamCreate(s+i));
-    }
-
-    ncclUniqueId id;
-    ncclComm_t comms[n_devs];
-
-    //generating NCCL unique ID at one process and broadcasting it to all
-    if (my_rank == 0) ncclGetUniqueId(&id);
-    MPICHECK(MPI_Bcast((void *)&id, sizeof(id), MPI_BYTE, 0, MPI_COMM_WORLD));
-
-    //initializing NCCL, group API is required around ncclCommInitRank as it is
-    //called across multiple GPUs in each thread/process
-    NCCLCHECK(ncclGroupStart());
-    for (int i=0; i<n_devs; i++) {
-        CUDACHECK(cudaSetDevice(local_rank*n_devs + i));
-        NCCLCHECK(ncclCommInitRank(comms+i, n_ranks*n_devs, id, my_rank*n_devs + i));
-    }
-    NCCLCHECK(ncclGroupEnd());
-    // demo end
-
-    // int filter_size[3] = {3, 3, 3};        //HWC
-    // int input_shape[4] = {64, 1, 10, 10};  //NCHW
-    // check_conv(cudnn, filter_size, input_shape);
-    // check_FC(cublas, 100, input_shape);
-    // check_ReLU(cudnn, input_shape);
-
     //Create a Simple LeNet
     Layer * network[7];
     int input_shape[4] = {64, 1, 28, 28};
@@ -153,7 +114,9 @@ int main(int argc, char* argv[])
     network[6]->get_output_shape(input_shape);
 
     std::cout <<"Shape of output : " << input_shape[0] << " " << input_shape[1] << " " << input_shape[2] << " " << input_shape[3] << std::endl;
-
+    int device;
+    checkCUDA(cudaGetDevice(&device)); 	
+    std::cout << device << std::endl;
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
     int input_size = network[0]->get_input_size();
@@ -183,10 +146,14 @@ int main(int argc, char* argv[])
     std::cout << "Rank " << my_rank << " starting foward pass" << std::endl;   
     // first layer is special
     network[0]->forward(d_batch, output_activations[0]);
+    std::cout <<"Local Rank "<<local_rank <<" " <<"FW Layer 0" << std::endl;
     for(int i=1;i<7;i++)
     {
+        //MPI_Barrier(MPI_COMM_WORLD); 
         network[i]->forward(output_activations[i-1], output_activations[i]);
+          
     }
+
 
     //Step 5 - Print output of final layer
     int output_size = network[6]->get_output_size();
@@ -196,12 +163,12 @@ int main(int argc, char* argv[])
 
     std::cout << "========= Printing output of final layer ==================" << std::endl;
 
-    for(int i=0; i<input_shape[0]; i++){
-        for(int j=0;j<input_shape[1];j++){
-            std::cout << output[i*input_shape[1] + j ] << " ";
-        }
-        std::cout << std::endl;
-    }
+//    for(int i=0; i<input_shape[0]; i++){
+        //for(int j=0;j<input_shape[1];j++){
+            //std::cout << output[i*input_shape[1] + j ] << " ";
+    //    }
+  //      std::cout << std::endl;
+   // }
 
     //Step 6 - Use random gradient for output right now
     float * grad_output = output;
@@ -227,26 +194,32 @@ int main(int argc, char* argv[])
         output_activations[0]
     );
 
+    int parameter_size = network[6]->get_param_size();
+    std::cout << "================Doing All reduce of layer 6==============" << std::endl;
+    NCCLCHECK(ncclAllReduce(network[6]->params_gradients, network[6]->params_gradients_nccl,parameter_size, ncclFloat, ncclSum, comm ,nccl_comm_stream ));
+
     std::cout << "========= Printing gradients of layer 6 ==================" << std::endl;
     
+ 
     //Print gradient of Layer 6 
-    int parameter_size = network[6]->get_param_size();
     float * gradients = (float*)malloc(parameter_size);
-    checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients, parameter_size, cudaMemcpyDeviceToHost));
+    checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients_nccl, parameter_size, cudaMemcpyDeviceToHost));
     for(int i=0; i<parameter_size/sizeof(float); i++)
-        std::cout << gradients[i] << " ";
+       std::cout << gradients[i] << " ";
 
-    std::cout << std::endl;
+    //std::cout << std::endl;
 
     //TODO :- now do an all reduce on gradients of all layers via NCCL
    
     std::cout << "Rank " << my_rank << " done" << std::endl;
     
     //finalizing NCCL
-    for (int i=0; i<n_devs; i++) {
-        ncclCommDestroy(comms[i]);
-    }
+   // for (int i=0; i<n_devs; i++) {
+    //    ncclCommDestroy(comms[i]);
+    //}
   
     //finalizing MPI
+    ncclCommDestroy(comm);
+    //cudaDeviceSynchronize();
     MPICHECK(MPI_Finalize());
 }
