@@ -43,7 +43,7 @@ int FC::get_param_size()
 void FC::allocate_internal_memory()
 {
     int param_size = this->get_param_size();
-    std::cout << "Parameter memory = " << param_size << " bytes" << std::endl;
+    //std::cout << "Parameter memory = " << param_size << " bytes" << std::endl;
     float* cpu_params = (float*) malloc(param_size);
     
     std::normal_distribution<float> distribution(MU,SIGMA);

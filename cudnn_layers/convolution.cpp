@@ -68,7 +68,7 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
                             /*image_height=*/output_shape[2],
                             /*image_width=*/output_shape[3]));
 
-    // get fastest convolution algorithm
+    //get fastest convolution algorithm
     checkCUDNN(
     cudnnGetConvolutionForwardAlgorithm(handle,
                                 input_descriptor,
@@ -79,6 +79,9 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
                                 /*memoryLimitInBytes=*/0,
                                 &convolution_algorithm));
     
+
+    //convolution_algorithm = CUDNN_CONVOLUTION_FWD_ALGO_IMPLICIT_PRECOMP_GEMM;
+
     size_t forward_workspace_size, backward_filter_workspace_size, backward_data_workspace_size;
     
     //get forward workspace size
@@ -91,9 +94,11 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
                                             &forward_workspace_size));
 
     //get fastest backward algorithm for filter
-    checkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(
-    handle, input_descriptor, output_descriptor, convolution_descriptor, kernel_descriptor,
-    CUDNN_CONVOLUTION_BWD_FILTER_PREFER_FASTEST, 0, &filter_algorithm));
+    // checkCUDNN(cudnnGetConvolutionBackwardFilterAlgorithm(
+    // handle, input_descriptor, output_descriptor, convolution_descriptor, kernel_descriptor,
+    // CUDNN_CONVOLUTION_BWD_FILTER_PREFER_FASTEST, 0, &filter_algorithm));
+
+    filter_algorithm = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_WINOGRAD_NONFUSED;
 
     //get workspace size for backward algorithm for filter
     checkCUDNN(cudnnGetConvolutionBackwardFilterWorkspaceSize(
@@ -101,9 +106,11 @@ Convolution::Convolution(int kernel_size[], int input_size[], cudnnHandle_t hand
     filter_algorithm, &backward_filter_workspace_size));
 
     //get fastest backward algorithm for data
-    checkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(
-    handle, kernel_descriptor, output_descriptor, convolution_descriptor, input_descriptor,
-    CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, &data_algorithm));
+    // checkCUDNN(cudnnGetConvolutionBackwardDataAlgorithm(
+    // handle, kernel_descriptor, output_descriptor, convolution_descriptor, input_descriptor,
+    // CUDNN_CONVOLUTION_BWD_DATA_PREFER_FASTEST, 0, &data_algorithm));
+
+    data_algorithm = CUDNN_CONVOLUTION_BWD_DATA_ALGO_WINOGRAD_NONFUSED;
 
     //get workspace size for  backward algorithm for data
     checkCUDNN(cudnnGetConvolutionBackwardDataWorkspaceSize(
@@ -128,7 +135,7 @@ void Convolution::allocate_internal_memory()
 {
     //allocate params memory 
     int filter_size = this->get_param_size();
-    std::cout << "Parameter memory = " << filter_size << " bytes" << std::endl;
+    //std::cout << "Parameter memory = " << filter_size << " bytes" << std::endl;
     float* cpu_params = (float*) malloc(filter_size);
     
     std::normal_distribution<float> distribution(MU,SIGMA);
