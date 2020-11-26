@@ -8,7 +8,7 @@ MAIN_OBJS = $(subst .cpp,.o,$(MAIN_SRCS))
 BINS = $(subst .cpp,,$(MAIN_SRCS))
 
 # Override this by setting the correspodning environment variable
-NCCL_HOME ?= /homes/cmsc818x-1uz3/nccl/build
+NCCL_HOME ?= /lustre/ssingh37/Acads/CMSC818x/nccl/build
 
 CC = nvcc -ccbin mpic++
 FLAGS = --std=c++11 -arch=sm_35 -lmpi -lm -lcudnn -lcublas -lrt -lcudart -lnccl
