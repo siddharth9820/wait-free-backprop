@@ -43,7 +43,7 @@ int FC::get_param_size()
 void FC::allocate_internal_memory()
 {
     int param_size = this->get_param_size();
-    std::cout << "Parameter memory = " << param_size << " bytes" << std::endl;
+    //std::cout << "Parameter memory = " << param_size << " bytes" << std::endl;
     float* cpu_params = (float*) malloc(param_size);
     
     std::normal_distribution<float> distribution(MU,SIGMA);
@@ -54,6 +54,7 @@ void FC::allocate_internal_memory()
 
     checkCUDA(cudaMalloc(&params, param_size));
     checkCUDA(cudaMalloc(&params_gradients, param_size));
+    checkCUDA(cudaMalloc(&params_gradients_nccl, param_size));
     checkCUDA(cudaMemcpy(params, cpu_params, param_size, cudaMemcpyHostToDevice));
     
 }
