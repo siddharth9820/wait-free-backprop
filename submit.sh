@@ -1,6 +1,6 @@
 #!/bin/sh
 
-#SBATCH -n 2
+#SBATCH -n 4
 #SBATCH --ntasks-per-node 2 
 #SBATCH -t 00:01:00
 #SBATCH --gres=gpu:2
@@ -14,4 +14,4 @@ module load openmpi/gcc
 
 
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CUDNN_ROOT/lib64:$CUDA_HOME/lib64:/lustre/ssingh37/Acads/CMSC818x/nccl/build/lib
-NCCL_DEBUG=INFO mpirun -n 2 ./multi_gpu 
+NCCL_IB_DISABLE=1 NCCL_SOCKET_IFNAME=eno1 mpirun -n 4 ./multi_gpu 
