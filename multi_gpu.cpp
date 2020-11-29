@@ -174,14 +174,15 @@ int main(int argc, char* argv[])
     cublasSetStream(cublas, kernel_exec_stream);
 
     //Create a Simple LeNet
-    int input_shape[4] = {64, 1, 28, 28};
+    int input_shape[4] = {64, 1, 100, 100};
     NN * neural_network = new NN({"conv2d 3 3 32",
                                   "ReLU",
                                   "conv2d 3 3 64",
                                   "ReLU",
                                   "conv2d 3 3 10",
                                   "ReLU",
-                                  "conv2d 3 3 10"
+                                  "conv2d 3 3 10","ReLU",
+				  "fc 50","ReLU", "fc 10"
                                  }, 
                                      input_shape, cudnn, cublas);
 
