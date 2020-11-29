@@ -12,6 +12,20 @@
 #include <iostream>
 #include <vector>
 #include <sstream>
+#include <string>
+
+#include <time.h>
+#include <sys/time.h>
+
+double get_wall_time(){
+    struct timeval time;
+    if (gettimeofday(&time,NULL)){
+        //  Handle error
+        return 0;
+    }
+    return (double)time.tv_sec + (double)time.tv_usec * .000001;
+}
+
 
 int ncclStreamSynchronize(cudaStream_t stream, ncclComm_t comm) {
   cudaError_t cudaErr;
@@ -94,23 +108,35 @@ class NN
     public:
         int num_layers;
         Layer ** network;
-        
-        NN(std::vector<std::string> nn_config,int input_shape[], cudnnHandle_t cudnn, cublasHandle_t cublas)
+        float ** output_activations;
+        float ** grad_output_activations;
+        cudaStream_t execute_stream, comm_stream;
+        ncclComm_t comm;
+        cudaEvent_t * events;
+
+        NN(std::vector<std::string> nn_config,int input_shape[], cudnnHandle_t cudnn, cublasHandle_t cublas, cudaStream_t nccl_comm_stream, cudaStream_t kernel_exec_stream, ncclComm_t comm)
         {
+            
+            execute_stream = kernel_exec_stream;
+            comm_stream = nccl_comm_stream;
+            this->comm = comm;
             num_layers = nn_config.size();
+            events = (cudaEvent_t *)malloc(num_layers * sizeof(cudaEvent_t)); 
             network = (Layer**)malloc(num_layers*sizeof(Layer*));
+            for(int i=0; i<num_layers; i++)cudaEventCreate(&events[i]);
+            
             for(int i=0; i<num_layers; i++)
             {
                 std::istringstream iss (nn_config[i]);
                 std::string layer_type;
                 iss >> layer_type;
-                std::cout << layer_type << " ";
+                //std::cout << layer_type << " ";
                 int ul=0, dim[3];
                 if(layer_type == "conv2d") ul = 3;
                 else if(layer_type == "fc") ul = 1;
                 for(int j=0;j<ul;j++){
                     iss >> dim[j];
-                    std::cout << dim[j] << " ";
+                    //std::cout << dim[j] << " ";
                 }
                 if(layer_type == "conv2d")
                     network[i] = new Convolution(dim, input_shape, cudnn);
@@ -120,11 +146,9 @@ class NN
                     network[i] = new ReLU(input_shape, cudnn);
                 
                 network[i]->get_output_shape(input_shape);
-                std::cout << std::endl << "output shape ";
-                for(int j=0;j<4;j++)std::cout << input_shape[j] << " ";
-                std::cout << std::endl;
-                
-
+                //std::cout << std::endl << "output shape ";
+                //for(int j=0;j<4;j++)std::cout << input_shape[j] << " ";
+                //std::cout << std::endl;
             }
         }
 
@@ -135,12 +159,100 @@ class NN
         Layer ** get_network_obj(){
             return network;
         }
+
+        int get_output_size(){
+            return network[num_layers-1]->get_output_size();
+        }
+
+        int get_input_size(){
+            return network[0]->get_input_size();
+        }
+
+        void get_output_shape(int shape[]){
+            network[num_layers-1]->get_output_shape(shape);
+        }
+
+        void allocate_memory(){
+            output_activations = (float**)malloc(num_layers*sizeof(float*));
+            grad_output_activations = (float**)malloc(num_layers*sizeof(float*));
+            for(int i=0; i<num_layers; i++)network[i]->allocate_internal_memory();
+            for(int i=0; i<num_layers; i++){
+                int output_size = network[i]->get_output_size();
+                checkCUDA(cudaMalloc(&output_activations[i], output_size));
+                if(i < num_layers - 1)
+                    checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
+            }
+        }
+
+        void forward(float * d_batch){
+            network[0]->forward(d_batch, output_activations[0]);
+            for(int i=1; i<num_layers; i++)network[i]->forward(output_activations[i-1], output_activations[i]);
+        }
+
+        void backward_wfbp(float * d_grad_output, float * d_batch, float * d_grad_batch){
+            grad_output_activations[num_layers-1] = d_grad_output;
+            
+            for(int i=num_layers-1; i>0; i--){
+                network[i]->backward(
+                    grad_output_activations[i],
+                    grad_output_activations[i-1],
+                    output_activations[i-1],
+                    output_activations[i]
+                );
+                cudaEventRecord(events[i], execute_stream);
+            }
+            network[0]->backward(
+                    grad_output_activations[0],
+                    d_grad_batch,
+                    d_batch,
+                    output_activations[0]
+            );
+            cudaEventRecord(events[0], execute_stream);
+
+            for(int i=num_layers-1; i>=0; i--){
+                if(network[i]->get_param_size() > 0){
+                cudaStreamWaitEvent(comm_stream, events[i], 0);
+                   NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients, network[i]->get_param_size(), ncclFloat, ncclSum, comm, comm_stream));
+                }
+            }
+        
+        }
+
+        void backward_vanilla(float * d_grad_output, float * d_batch, float * d_grad_batch){
+            grad_output_activations[num_layers-1] = d_grad_output;
+            for(int i=num_layers-1; i>0; i--)
+            {
+                network[i]->backward(
+                    grad_output_activations[i],
+                    grad_output_activations[i-1],
+                    output_activations[i-1],
+                    output_activations[i]
+                ); 
+            }
+            network[0]->backward(
+                    grad_output_activations[0],
+                    d_grad_batch,
+                    d_batch,
+                    output_activations[0]
+            );
+
+            checkCUDA(cudaStreamSynchronize(execute_stream));
+            
+            for(int i=num_layers-1; i>=0; i--){
+                if(network[i]->get_param_size() > 0){
+                   NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, comm_stream));
+                }
+            }
+        }
 };
 
 
 int main(int argc, char* argv[])
 {
     int my_rank, n_ranks, local_rank = 0;
+    std::string nepochs(argv[1]);
+    int num_epochs = std::stoi(nepochs);
+    std::string mode(argv[2]);
 
     //initializing MPI
     MPICHECK(MPI_Init(&argc, &argv));
@@ -150,7 +262,7 @@ int main(int argc, char* argv[])
    
     // Assume each rank gets one gpu for now
     local_rank = get_local_rank(my_rank, n_ranks);
-    std::cout << "My local rank : " << local_rank << std::endl;
+    std::cout << "Global Rank " << my_rank <<" Local Rank " << local_rank << std::endl;
     
     
     checkCUDA(cudaSetDevice(local_rank));
@@ -174,109 +286,61 @@ int main(int argc, char* argv[])
     cublasSetStream(cublas, kernel_exec_stream);
 
     //Create a Simple LeNet
-    int input_shape[4] = {64, 1, 28, 28};
-    NN * neural_network = new NN({"conv2d 3 3 32",
+    int input_shape[4] = {64, 3, 50, 50};
+    NN * neural_network = new NN({"conv2d 3 3 64",
                                   "ReLU",
-                                  "conv2d 3 3 64",
+                                  "conv2d 3 3 128",
                                   "ReLU",
-                                  "conv2d 3 3 10",
-                                  "ReLU",
-                                  "conv2d 3 3 10"
                                  }, 
-                                     input_shape, cudnn, cublas);
-
-    Layer ** network = neural_network->get_network_obj();
-    int num_layers = neural_network->get_num_layers();
-    
-    
-    int device;
-    checkCUDA(cudaGetDevice(&device)); 	
-    std::cout << "My device is : "<< device << std::endl;
-    
+                                input_shape, cudnn, cublas, nccl_comm_stream, kernel_exec_stream, comm);
     
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
-    int input_size = network[0]->get_input_size();
-    float *d_batch, *d_grad_batch, *batch;
-    checkCUDA(cudaMalloc(&d_batch, input_size));
-    checkCUDA(cudaMalloc(&d_grad_batch, input_size));
-    
-    batch = (float*)malloc(input_size);
-    std::normal_distribution<float> distribution(MU,SIGMA);
-    std::default_random_engine generator;
-    for(int i=0; i<input_size/sizeof(float); i++)batch[i] = distribution(generator);
-    checkCUDA(cudaMemcpy(d_batch, batch, input_size, cudaMemcpyHostToDevice));
-
-    //Step 2 - Allocate internal memory for all layers
-    for(int i=0; i<num_layers; i++)network[i]->allocate_internal_memory();
-
-    //Step 3 - Allocate output activation buffers for each layer
-    float *output_activations[num_layers], *grad_output_activations[num_layers];
-    for(int i=0; i<num_layers; i++)
-    {
-        int output_size = network[i]->get_output_size();
-        checkCUDA(cudaMalloc(&output_activations[i], output_size));
-        checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
+    int input_size = neural_network->get_input_size();
+    int output_size = neural_network->get_output_size();
+    int output_shape[4];
+    neural_network->get_output_shape(output_shape);
+    if(my_rank == 0){
+        std::cout << "The output shape is : " << output_shape[0] << " " << output_shape[1] << " " << output_shape[2] << " " << output_shape[3] << std::endl;
+        if(mode=="vanilla") std::cout << "Doing Vanilla BackPropogation" << std::endl;
+        else if(mode == "wfbp")std::cout << "Doing Wait-Free BackPropogation" << std::endl;
     }
 
-    for(int X=0;X<4;X++)
-    {
-        network[0]->forward(d_batch, output_activations[0]);
-        //std::cout <<"Local Rank "<<local_rank <<" " <<"FW Layer 0" << std::endl;
-        checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-        for(int i=1;i<num_layers;i++)
-        {
-            //MPI_Barrier(MPI_COMM_WORLD);
-            network[i]->forward(output_activations[i-1], output_activations[i]);
-            //std::cout <<"Local Rank "<<local_rank <<" " <<"FW Layer " << i << std::endl; 
-            //checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-        }
-        std::cout <<"Local Rank "<<local_rank <<" " <<"FW Pass Done"<< std::endl;
-        
-        //Step 5 - Print output of final layer
-        int output_size = network[num_layers-1]->get_output_size();
+    float *d_batch, *d_grad_batch, *batch, *d_grad_output;
+    checkCUDA(cudaMalloc(&d_batch, input_size));
+    checkCUDA(cudaMalloc(&d_grad_batch, input_size));
+    checkCUDA(cudaMalloc(&d_grad_output, output_size));
+    batch = (float*)malloc(input_size);
+    float * grad_output = (float*) malloc(output_size);
 
-        //Step 6 - Use random gradient for output right now
-        float * grad_output = (float*) malloc(output_size);
+    std::normal_distribution<float> distribution(MU,SIGMA);
+    std::default_random_engine generator;
+    
+    neural_network->allocate_memory();
+
+    double start = get_wall_time();
+    for(int X=0;X<num_epochs;X++)
+    {
+        if(my_rank == 0)
+            std::cout << "Epoch number "<<X+1 <<std::endl;
+        for(int i=0; i<input_size/sizeof(float); i++)batch[i] = distribution(generator);
+        checkCUDA(cudaMemcpy(d_batch, batch, input_size, cudaMemcpyHostToDevice));
+        
+        neural_network->forward(d_batch);        
+        
         for(int i=0; i<output_size/sizeof(float); i++)
             grad_output[i] = distribution(generator);
-        checkCUDA(cudaMemcpy(grad_output_activations[num_layers-1], grad_output, output_size, cudaMemcpyHostToDevice));
+        
+        checkCUDA(cudaMemcpy(d_grad_output, grad_output, output_size, cudaMemcpyHostToDevice));
 
-        //Step 7 - Do backward Pass 
-        for(int i=num_layers-1; i>0; i--)
-        {
-            network[i]->backward(
-                grad_output_activations[i],
-                grad_output_activations[i-1],
-                output_activations[i-1],
-                output_activations[i]
-            );
-            
-            // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << i << std::endl;
-            if(network[i]->get_param_size()>0){ 
-                checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-                NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, nccl_comm_stream));
-            }
-        }
-        // first layer is special
-        network[0]->backward(
-            grad_output_activations[0],
-            d_grad_batch,
-            d_batch,
-            output_activations[0]
-        );
-        // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << 0 << std::endl; 
-        
-        if(network[0]->get_param_size()>0){
-            checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-            NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
-        }
-        
-        int a = ncclStreamSynchronize(nccl_comm_stream, comm);
-        if(a!=0)break;
-        //checkCUDA(cudaStreamSynchronize(nccl_comm_stream));
-        std::cout <<"Local Rank "<<local_rank <<" " <<"BW Pass Done"<< std::endl;
+        if (mode == "vanilla")
+            neural_network->backward_vanilla(d_grad_output, d_batch, d_grad_batch);
+        else if(mode == "wfbp")
+            neural_network->backward_wfbp(d_grad_output, d_batch, d_grad_batch); 
+
+        checkCUDA(cudaStreamSynchronize(nccl_comm_stream));
     } 
+    double end = get_wall_time();
     ncclCommDestroy(comm);
     MPICHECK(MPI_Finalize());
     checkCUDA(cudaStreamDestroy(kernel_exec_stream));
@@ -285,6 +349,6 @@ int main(int argc, char* argv[])
     cublasDestroy(cublas);
 
 
-    std::cout << "Rank " << my_rank << " done" << std::endl;
+    std::cout << "Rank " << my_rank << " done" << " Time taken is :" << (end-start)/num_epochs <<" seconds" << std::endl;
 
 }
