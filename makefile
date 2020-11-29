@@ -12,7 +12,7 @@ NCCL_HOME ?= /lustre/ssingh37/Acads/CMSC818x/nccl/build
 
 CC = nvcc -ccbin mpic++
 FLAGS = --std=c++11 -arch=sm_35 -lmpi -lm -lcudnn -lcublas -lrt -lcudart -lnccl
-CFLAGS = -I$(CUDNN_INCDIR) -I$(NCCL_HOME)/include
+CFLAGS =  -I$(NCCL_HOME)/include
 LDFLAGS = -L$(CUDNN_LIBDIR)64 -L$(NCCL_HOME)/lib
 
 .PHONY: all
@@ -29,4 +29,4 @@ $(LAYER_OBJS): %.o: cudnn_layers/%.cpp cudnn_layers/%.h makefile
 
 .PHONY: clean
 clean:
-	rm *.o $(BINS)
+	rm $(BINS) multi_gpu.o 
