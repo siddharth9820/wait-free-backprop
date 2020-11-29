@@ -2,3 +2,5 @@
 submit.sh
 *.o
 *.out
+single_gpu
+multi_gpu
