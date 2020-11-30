@@ -3,7 +3,7 @@ LAYER_SRCS = convolution.cpp generic_layer.cpp fc.cpp relu.cpp
 LAYER_OBJS = $(subst .cpp,.o,$(LAYER_SRCS))
 LAYER_HEADERS = cudnn_layers/convolution.h
 
-MAIN_SRCS = single_gpu.cpp multi_gpu.cpp
+MAIN_SRCS = single_gpu.cpp multi_GPU_wfbp.cpp multi_GPU_VanillaBP.cpp
 MAIN_OBJS = $(subst .cpp,.o,$(MAIN_SRCS))
 BINS = $(subst .cpp,,$(MAIN_SRCS))
 

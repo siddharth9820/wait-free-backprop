@@ -141,13 +141,14 @@ class NN
 int main(int argc, char* argv[])
 {
     int my_rank, n_ranks, local_rank = 0;
-
+    float min_time, max_time, sum_time;
+    
     //initializing MPI
     MPICHECK(MPI_Init(&argc, &argv));
     MPICHECK(MPI_Comm_rank(MPI_COMM_WORLD, &my_rank));
     MPICHECK(MPI_Comm_size(MPI_COMM_WORLD, &n_ranks));
  
-   
+
     // Assume each rank gets one gpu for now
     local_rank = get_local_rank(my_rank, n_ranks);
     std::cout << "My local rank : " << local_rank << std::endl;
@@ -220,6 +221,11 @@ int main(int argc, char* argv[])
         checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
     }
 
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start, kernel_exec_stream);
     for(int X=0;X<4;X++)
     {
         network[0]->forward(d_batch, output_activations[0]);
@@ -274,10 +280,23 @@ int main(int argc, char* argv[])
         }
         
         int a = ncclStreamSynchronize(nccl_comm_stream, comm);
+
         if(a!=0)break;
         //checkCUDA(cudaStreamSynchronize(nccl_comm_stream));
         std::cout <<"Local Rank "<<local_rank <<" " <<"BW Pass Done"<< std::endl;
     } 
+    cudaEventRecord(stop, kernel_exec_stream);
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+	//reduce operations to print min, max, and avg time.
+	MPICHECK(MPI_Reduce(&milliseconds, &sum_time, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD));
+	MPICHECK(MPI_Reduce(&milliseconds, &min_time, 1, MPI_FLOAT, MPI_MIN, 0, MPI_COMM_WORLD));
+	MPICHECK(MPI_Reduce(&milliseconds, &max_time, 1, MPI_FLOAT, MPI_MAX, 0, MPI_COMM_WORLD));
+
+    if(my_rank==0)
+        std::cout << "TIME: Min: " << min_time/1000 << " s " << "Avg: " << (sum_time/n_ranks)/1000 << " s " << "Max: " << max_time/1000 << " s" << std::endl;
+
     ncclCommDestroy(comm);
     MPICHECK(MPI_Finalize());
     checkCUDA(cudaStreamDestroy(kernel_exec_stream));
