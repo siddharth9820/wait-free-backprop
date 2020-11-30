@@ -168,8 +168,7 @@ int main(int argc, char* argv[])
     cudnnCreate(&cudnn);
     cublasHandle_t cublas;
     cublasCreate(&cublas);
-    cudaStream_t nccl_comm_stream, kernel_exec_stream;
-    checkCUDA(cudaStreamCreate(&nccl_comm_stream));
+    cudaStream_t kernel_exec_stream; 
     checkCUDA(cudaStreamCreate(&kernel_exec_stream));
     checkCUDNN(cudnnSetStream(cudnn, kernel_exec_stream));
     cublasSetStream(cublas, kernel_exec_stream);
@@ -260,10 +259,6 @@ int main(int argc, char* argv[])
             );
             
             // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << i << std::endl;
-            if(network[i]->get_param_size()>0){ 
-                checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-                NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, nccl_comm_stream));
-            }
         }
         // first layer is special
         network[0]->backward(
@@ -274,12 +269,13 @@ int main(int argc, char* argv[])
         );
         // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << 0 << std::endl; 
         
-        if(network[0]->get_param_size()>0){
-            checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-            NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
+        checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
+        for(int i=num_layers-1; i>-1; i--)
+        {
+            NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm ,kernel_exec_stream));
         }
-        
-        int a = ncclStreamSynchronize(nccl_comm_stream, comm);
+
+        int a = ncclStreamSynchronize(kernel_exec_stream, comm);
 
         if(a!=0)break;
         //checkCUDA(cudaStreamSynchronize(nccl_comm_stream));
@@ -300,7 +296,6 @@ int main(int argc, char* argv[])
     ncclCommDestroy(comm);
     MPICHECK(MPI_Finalize());
     checkCUDA(cudaStreamDestroy(kernel_exec_stream));
-    checkCUDA(cudaStreamDestroy(nccl_comm_stream));
     checkCUDNN(cudnnDestroy(cudnn));
     cublasDestroy(cublas);
 
