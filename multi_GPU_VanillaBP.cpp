@@ -225,7 +225,7 @@ int main(int argc, char* argv[])
     cudaEventCreate(&stop);
 
     cudaEventRecord(start, kernel_exec_stream);
-    for(int X=0;X<4;X++)
+    for(int X=0;X<N_BATCHES;X++)
     {
         network[0]->forward(d_batch, output_activations[0]);
         //std::cout <<"Local Rank "<<local_rank <<" " <<"FW Layer 0" << std::endl;

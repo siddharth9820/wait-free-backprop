@@ -10,6 +10,7 @@
 
 #define MU 0 
 #define SIGMA 0.1
+#define N_BATCHES 200
 
 #define checkCUDNN(expression)                               \
   {                                                          \
