@@ -190,9 +190,7 @@ int main(int argc, char* argv[])
     Layer ** network = neural_network->get_network_obj();
     int num_layers = neural_network->get_num_layers();
     
-    cudaEvent_t * events = (cudaEvent_t *)malloc(num_layers * sizeof(cudaEvent_t));
-    for(int i=0; i<num_layers; i++)cudaEventCreate(&events[i]);
-
+  
     
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
@@ -259,11 +257,11 @@ int main(int argc, char* argv[])
             
             // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << i << std::endl;
             if(network[i]->get_param_size()>0){ 
-                // checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-                // NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, nccl_comm_stream));
-                checkCUDA(cudaEventRecord(events[i], kernel_exec_stream));
-                checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[i], 0));
-                NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
+                checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
+                NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, nccl_comm_stream));
+                // checkCUDA(cudaEventRecord(events[i], kernel_exec_stream));
+                // checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[i], 0));
+                // NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
             }
         }
         // first layer is special
@@ -276,19 +274,14 @@ int main(int argc, char* argv[])
         // std::cout <<"Local Rank "<<local_rank <<" " <<"BW Layer " << 0 << std::endl; 
         
         if(network[0]->get_param_size()>0){
-            // checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
-            // NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
-            checkCUDA(cudaEventRecord(events[0], kernel_exec_stream));
-            checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[0], 0));
+            checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
             NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
+            // checkCUDA(cudaEventRecord(events[0], kernel_exec_stream));
+            // checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[0], 0));
+            // NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
         }
 
-        // for(int i=num_layers-1; i>=0; i--){
-        //     if(network[i]->get_param_size()>0){
-        //         checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[i], 0));
-        //         NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
-        //     }
-        // }
+    
         
         int a = ncclStreamSynchronize(nccl_comm_stream, comm);
 
