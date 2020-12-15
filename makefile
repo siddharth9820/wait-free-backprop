@@ -6,7 +6,7 @@ LAYER_HEADERS = cudnn_layers/convolution.h
 MNIST_SRC = dataloader.cpp 
 MNIST_OBJS = $(subst .cpp,.o,$(MNIST_SRCS))
 
-MAIN_SRCS = single_gpu.cpp multi_GPU_wfbp.cpp 
+MAIN_SRCS =  multi_GPU_wfbp.cpp 
 MAIN_OBJS = $(subst .cpp,.o,$(MAIN_SRCS))
 BINS = $(subst .cpp,,$(MAIN_SRCS))
 
