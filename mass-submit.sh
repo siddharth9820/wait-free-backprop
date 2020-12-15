@@ -15,7 +15,7 @@ function build_submit() {
     script_name=submit-${bin}-${n_gpus}.sh
     echo "#!/bin/bash
 
-#SBATCH -t 00:30
+#SBATCH -t 05:00
 #SBATCH --ntasks ${n_gpus}
 #SBATCH --ntasks-per-node 2
 #SBATCH --gres=gpu:2
@@ -35,7 +35,7 @@ NCCL_IB_DISABLE=1 NCCL_SOCKET_IFNAME=eno1\
     mpirun ./${bin}"\
     > ${script_name}
     chmod +x ${script_name}
-    #sbatch ${script_name}
+    sbatch ${script_name}
 }
 
 for bin in multi_GPU_wfbp multi_GPU_VanillaBP ; do
