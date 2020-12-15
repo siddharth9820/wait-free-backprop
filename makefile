@@ -19,7 +19,10 @@ CFLAGS = -I$(CUDNN_INCDIR) -I$(NCCL_HOME)/include -Imnist-loader/include
 LDFLAGS = -L$(CUDNN_LIBDIR)64 -L$(NCCL_HOME)/lib
 
 .PHONY: all
-all: $(BINS)
+all: $(BINS) single_gpu
+
+single_gpu: single_gpu.cu dataloader $(LAYER_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(FLAGS) $< $(LAYER_OBJS) dataloader.o mnist-loader/src/mnist_loader.o $(NVIDIA_FLAGS) -o $@
 
 $(BINS) : % : %.o $(LAYER_OBJS) dataloader
 	$(CC) $(CFLAGS) $(LDFLAGS) $(FLAGS) $< $(LAYER_OBJS) dataloader.o mnist-loader/src/mnist_loader.o $(NVIDIA_FLAGS) -o $@
