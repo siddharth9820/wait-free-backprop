@@ -4,3 +4,4 @@ submit.sh
 *.out
 single_gpu
 multi_gpu
+multi_GPU_*

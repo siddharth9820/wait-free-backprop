@@ -4,10 +4,21 @@
 #include "cudnn_layers/relu.h"
 #include <iostream>
 #include "common.h"
-#include "mpi.h"
-#include "nccl.h"
 #include <unistd.h>
 #include <stdint.h>
+#include "dataloader.h"
+#include <math.h>
+#include "mpi.h"
+#include "nccl.h"
+ 
+__global__ void optimise(float * params,  float * gradient ,int N, float learning_rate)
+{
+  int i = blockDim.x*blockIdx.x + threadIdx.x;
+  if(i>N)return;
+  params[i] -= learning_rate*gradient[i];
+  gradient[i] = 0.0;
+}
+
 
 static uint64_t getHostHash(const char* string) {
   // Based on DJB2, result = result * 33 + char
@@ -27,6 +38,26 @@ static void getHostName(char* hostname, int maxlen) {
      return;
     }
   }
+}
+
+float get_loss_and_grad(int output_shape[], float * output, float * grad_output, int * labels)
+{
+   float loss = 0;
+   for(int i=0;i<output_shape[0];i++){
+	float sum = 0;
+	for(int j=0;j<output_shape[1];j++){
+	  sum += exp(output[i*output_shape[1]+j]);
+        }
+    for(int j=0;j<output_shape[1];j++){
+	   float p = exp(output[i*output_shape[1]+j])/sum;
+	   grad_output[i*output_shape[1]+j] = p;
+           if(j == labels[i]){
+		grad_output[i*output_shape[1]+j]-=1;	  
+           	loss += -log(p);
+           }
+       }
+    }
+    return loss/output_shape[0];
 }
 
 int main(int argc, char* argv[])
@@ -58,6 +89,7 @@ int main(int argc, char* argv[])
     //Create a Simple LeNet
     Layer * network[7];
     int input_shape[4] = {64, 1, 28, 28};
+    int output_shape[4];
     int filter1[3] = {5, 5, 32};
     int filter2[3] = {5, 5, 64};
     
@@ -83,6 +115,7 @@ int main(int argc, char* argv[])
     network[6]->get_output_shape(input_shape);
 
     std::cout <<"Shape of output : " << input_shape[0] << " " << input_shape[1] << " " << input_shape[2] << " " << input_shape[3] << std::endl;
+    for(int i=0;i<4;i++)output_shape[i] = input_shape[i];
 
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
@@ -90,10 +123,14 @@ int main(int argc, char* argv[])
     float * d_batch, *d_grad_batch ,* batch;
     checkCUDA(cudaMalloc(&d_batch, input_size));
     checkCUDA(cudaMalloc(&d_grad_batch, input_size));
-    batch = (float*)malloc(input_size);
+    int * labels;
+    //batch = (float*)malloc(input_size);
     std::normal_distribution<float> distribution(MU,SIGMA);
     std::default_random_engine generator;
-    for(int i=0; i<input_size/sizeof(float); i++)batch[i] = distribution(generator);
+    //for(int i=0; i<input_size/sizeof(float); i++)batch[i] = distribution(generator);
+    MNIST_loader * loader = new MNIST_loader(64, false);
+    loader->init_memory(&batch, &labels);
+    loader->get_next_batch(batch, labels);
     checkCUDA(cudaMemcpy(d_batch, batch, input_size, cudaMemcpyHostToDevice));
 
     //Step 2 - Allocate internal memory for all layers
@@ -108,6 +145,8 @@ int main(int argc, char* argv[])
         checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
     }
 
+    int t = 10;
+    while(t--){
     //Step 4 - Do a forward Pass 
     for(int i=0;i<7;i++)
     {
@@ -121,38 +160,45 @@ int main(int argc, char* argv[])
     float * output = (float*)malloc(output_size);
     checkCUDA(cudaMemcpy(output, output_activations[6], output_size, cudaMemcpyDeviceToHost));
 
-    std::cout << "========= Printing output of final layer ==================" << std::endl;
+    //std::cout << "========= Printing output of final layer ==================" << std::endl;
 
-    for(int i=0; i<input_shape[0]; i++){
-        for(int j=0;j<input_shape[1];j++){
-            std::cout << output[i*input_shape[1] + j ] << " ";
-        }
-        std::cout << std::endl;
-    }
+    //for(int i=0; i<input_shape[0]; i++){
+     //   for(int j=0;j<input_shape[1];j++){
+    //        std::cout << output[i*input_shape[1] + j ] << " ";
+    //    }
+    //    std::cout << std::endl;
+    //}
 
     //Step 6 - Use random gradient for output right now
-    float * grad_output = output;
-    for(int i=0; i<output_size/sizeof(float); i++) grad_output[i] = distribution(generator);
+    float * grad_output = (float*)malloc(output_size);
+    //for(int i=0; i<output_size/sizeof(float); i++) grad_output[i] = distribution(generator);
+    float loss =  get_loss_and_grad(output_shape, output, grad_output, labels);
     checkCUDA(cudaMemcpy(grad_output_activations[6], grad_output, output_size, cudaMemcpyHostToDevice));
-
+    std::cout << "==============Printing loss ============" << loss << std::endl;
     //Step 7 - Do backward Pass 
     for(int i=6; i>=0; i--)
     {
         if(i==0)network[i]->backward(grad_output_activations[i], d_grad_batch, d_batch, output_activations[i]);
         else network[i]->backward(grad_output_activations[i], grad_output_activations[i-1], output_activations[i-1], output_activations[i]);
+	int param_size = network[i]->get_param_size();
+	if (param_size > 0)
+        	optimise<<<1, param_size/sizeof(float)>>>(network[i]->params, network[i]->params_gradients  , param_size/sizeof(float), 0.01);
+
     }
 
-    std::cout << "========= Printing gradients of layer 6 ==================" << std::endl;
+
+    //std::cout << "========= Printing gradients of layer 6 ==================" << std::endl;
     
     
     //Print gradient of Layer 6 
-    int parameter_size = network[6]->get_param_size();
-    float * gradients = (float*)malloc(parameter_size);
-    checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients, parameter_size, cudaMemcpyDeviceToHost));
-    for(int i=0; i<parameter_size/sizeof(float); i++)
-        std::cout << gradients[i] << " ";
+    //int parameter_size = network[6]->get_param_size();
+    //float * gradients = (float*)malloc(parameter_size);
+    //checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients, parameter_size, cudaMemcpyDeviceToHost));
+    //for(int i=0; i<parameter_size/sizeof(float); i++)
+    //    std::cout << gradients[i] << " ";
 
-    std::cout << std::endl;
+    //std::cout << std::endl;
+    }
     cudaDeviceSynchronize();
     (MPI_Finalize());
     //TODO :- now do an all reduce on gradients of all layers via NCCL

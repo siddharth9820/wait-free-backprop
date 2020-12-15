@@ -182,7 +182,7 @@ int main(int argc, char* argv[])
                                   "ReLU",
                                   "conv2d 3 3 10",
                                   "ReLU",
-                                  "conv2d 3 3 10","ReLU",
+                                  "conv2d 3 3 1","ReLU",
 				  "fc 50","ReLU", "fc 10"
                                  }, 
                                      input_shape, cudnn, cublas);
@@ -190,11 +190,7 @@ int main(int argc, char* argv[])
     Layer ** network = neural_network->get_network_obj();
     int num_layers = neural_network->get_num_layers();
     
-    
-    int device;
-    checkCUDA(cudaGetDevice(&device)); 	
-    std::cout << "My device is : "<< device << std::endl;
-    
+  
     
     //Do a forward Pass
     //Step 1 - Copy batch to GPU - Here we will generate random batch
@@ -222,15 +218,15 @@ int main(int argc, char* argv[])
     }
 
     cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
+    checkCUDA(cudaEventCreate(&start));
+    checkCUDA(cudaEventCreate(&stop));
 
-    cudaEventRecord(start, kernel_exec_stream);
-    for(int X=0;X<N_BATCHES;X++)
+    checkCUDA(cudaEventRecord(start, kernel_exec_stream));
+    for(int X=0;X<192/n_ranks;X++)
     {
         network[0]->forward(d_batch, output_activations[0]);
         //std::cout <<"Local Rank "<<local_rank <<" " <<"FW Layer 0" << std::endl;
-        checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
+        //checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
         for(int i=1;i<num_layers;i++)
         {
             //MPI_Barrier(MPI_COMM_WORLD);
@@ -263,6 +259,9 @@ int main(int argc, char* argv[])
             if(network[i]->get_param_size()>0){ 
                 checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
                 NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm, nccl_comm_stream));
+                // checkCUDA(cudaEventRecord(events[i], kernel_exec_stream));
+                // checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[i], 0));
+                // NCCLCHECK(ncclAllReduce(network[i]->params_gradients, network[i]->params_gradients_nccl, network[i]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
             }
         }
         // first layer is special
@@ -277,18 +276,23 @@ int main(int argc, char* argv[])
         if(network[0]->get_param_size()>0){
             checkCUDA(cudaStreamSynchronize(kernel_exec_stream));
             NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
+            // checkCUDA(cudaEventRecord(events[0], kernel_exec_stream));
+            // checkCUDA(cudaStreamWaitEvent(nccl_comm_stream, events[0], 0));
+            // NCCLCHECK(ncclAllReduce(network[0]->params_gradients, network[0]->params_gradients_nccl, network[0]->get_param_size(), ncclFloat, ncclSum, comm ,nccl_comm_stream));
         }
+
+    
         
         int a = ncclStreamSynchronize(nccl_comm_stream, comm);
 
         if(a!=0)break;
-        //checkCUDA(cudaStreamSynchronize(nccl_comm_stream));
+        
         std::cout <<"Local Rank "<<local_rank <<" " <<"BW Pass Done"<< std::endl;
     } 
-    cudaEventRecord(stop, kernel_exec_stream);
-    cudaEventSynchronize(stop);
+    checkCUDA(cudaEventRecord(stop, kernel_exec_stream));
+    checkCUDA(cudaEventSynchronize(stop));
     float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
+    checkCUDA(cudaEventElapsedTime(&milliseconds, start, stop));
 	//reduce operations to print min, max, and avg time.
 	MPICHECK(MPI_Reduce(&milliseconds, &sum_time, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD));
 	MPICHECK(MPI_Reduce(&milliseconds, &min_time, 1, MPI_FLOAT, MPI_MIN, 0, MPI_COMM_WORLD));

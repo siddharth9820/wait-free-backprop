@@ -1,0 +1,3 @@
+[submodule "mnist-loader"]
+	path = mnist-loader
+	url = https://github.com/arpaka/mnist-loader
