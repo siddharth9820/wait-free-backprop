@@ -14,7 +14,7 @@
 __global__ void optimise(float * params,  float * gradient ,int N, float learning_rate)
 {
   int i = blockDim.x*blockIdx.x + threadIdx.x;
-  if(i>N)return;
+  if(i>=N)return;
   params[i] -= learning_rate*gradient[i];
   gradient[i] = 0.0;
 }
@@ -42,20 +42,20 @@ static void getHostName(char* hostname, int maxlen) {
 
 float get_loss_and_grad(int output_shape[], float * output, float * grad_output, int * labels)
 {
-   float loss = 0;
-   for(int i=0;i<output_shape[0];i++){
-	float sum = 0;
-	for(int j=0;j<output_shape[1];j++){
-	  sum += exp(output[i*output_shape[1]+j]);
+    float loss = 0;
+    for(int i=0;i<output_shape[0];i++){
+    float sum = 0;
+      for(int j=0;j<output_shape[1];j++){
+        sum += exp(output[i*output_shape[1]+j]);
+      }
+      for(int j=0;j<output_shape[1];j++){
+        float p = exp(output[i*output_shape[1]+j])/sum;
+        grad_output[i*output_shape[1]+j] = p;
+        if(j == labels[i]){
+          grad_output[i*output_shape[1]+j]-=1;	  
+          loss += -log(p);
         }
-    for(int j=0;j<output_shape[1];j++){
-	   float p = exp(output[i*output_shape[1]+j])/sum;
-	   grad_output[i*output_shape[1]+j] = p;
-           if(j == labels[i]){
-		grad_output[i*output_shape[1]+j]-=1;	  
-           	loss += -log(p);
-           }
-       }
+      }
     }
     return loss/output_shape[0];
 }
@@ -145,59 +145,47 @@ int main(int argc, char* argv[])
         checkCUDA(cudaMalloc(&grad_output_activations[i], output_size));
     }
 
-    int t = 10;
-    while(t--){
-    //Step 4 - Do a forward Pass 
-    for(int i=0;i<7;i++)
+    int t = 7800;
+    int batch_no = 0;
+    float epoch_loss = 0;
+    int epoch_length = 780;
+    while(t--)
     {
-        if(i==0)network[i]->forward(d_batch, output_activations[0]);
-        else network[i]->forward(output_activations[i-1], output_activations[i]);
-    }
+      loader->get_next_batch(batch, labels);
+      checkCUDA(cudaMemcpy(d_batch, batch, input_size, cudaMemcpyHostToDevice));
+      //Step 4 - Do a forward Pass 
+      for(int i=0;i<7;i++)
+      {
+          if(i==0)network[i]->forward(d_batch, output_activations[0]);
+          else network[i]->forward(output_activations[i-1], output_activations[i]);
+      }
 
-    //Step 5 - Print output of final layer
-    int output_size = network[6]->get_output_size();
-    network[6]->get_output_shape(input_shape);
-    float * output = (float*)malloc(output_size);
-    checkCUDA(cudaMemcpy(output, output_activations[6], output_size, cudaMemcpyDeviceToHost));
+      //Step 5 - Print output of final layer
+      int output_size = network[6]->get_output_size();
+      network[6]->get_output_shape(input_shape);
+      float * output = (float*)malloc(output_size);
+      checkCUDA(cudaMemcpy(output, output_activations[6], output_size, cudaMemcpyDeviceToHost));
 
-    //std::cout << "========= Printing output of final layer ==================" << std::endl;
+      float * grad_output = (float*)malloc(output_size);
+      float loss =  get_loss_and_grad(output_shape, output, grad_output, labels);
+      epoch_loss += loss;
+      checkCUDA(cudaMemcpy(grad_output_activations[6], grad_output, output_size, cudaMemcpyHostToDevice));
+      if(batch_no%epoch_length == 0 && batch_no>1){
+        std::cout << "Epoch loss " << batch_no << " = " << epoch_loss/epoch_length << std::endl;
+        epoch_loss = 0;
+      }
+      batch_no += 1;
+      //Step 7 - Do backward Pass 
+      for(int i=6; i>=0; i--)
+      {
+          if(i==0)network[i]->backward(grad_output_activations[i], d_grad_batch, d_batch, output_activations[i]);
+          else network[i]->backward(grad_output_activations[i], grad_output_activations[i-1], output_activations[i-1], output_activations[i]);
+          int param_size = network[i]->get_param_size();
+          if (param_size > 0)
+          optimise<<<1, param_size/sizeof(float)>>>(network[i]->params, network[i]->params_gradients  , param_size/sizeof(float), 0.0001);
 
-    //for(int i=0; i<input_shape[0]; i++){
-     //   for(int j=0;j<input_shape[1];j++){
-    //        std::cout << output[i*input_shape[1] + j ] << " ";
-    //    }
-    //    std::cout << std::endl;
-    //}
+      }
 
-    //Step 6 - Use random gradient for output right now
-    float * grad_output = (float*)malloc(output_size);
-    //for(int i=0; i<output_size/sizeof(float); i++) grad_output[i] = distribution(generator);
-    float loss =  get_loss_and_grad(output_shape, output, grad_output, labels);
-    checkCUDA(cudaMemcpy(grad_output_activations[6], grad_output, output_size, cudaMemcpyHostToDevice));
-    std::cout << "==============Printing loss ============" << loss << std::endl;
-    //Step 7 - Do backward Pass 
-    for(int i=6; i>=0; i--)
-    {
-        if(i==0)network[i]->backward(grad_output_activations[i], d_grad_batch, d_batch, output_activations[i]);
-        else network[i]->backward(grad_output_activations[i], grad_output_activations[i-1], output_activations[i-1], output_activations[i]);
-	int param_size = network[i]->get_param_size();
-	if (param_size > 0)
-        	optimise<<<1, param_size/sizeof(float)>>>(network[i]->params, network[i]->params_gradients  , param_size/sizeof(float), 0.01);
-
-    }
-
-
-    //std::cout << "========= Printing gradients of layer 6 ==================" << std::endl;
-    
-    
-    //Print gradient of Layer 6 
-    //int parameter_size = network[6]->get_param_size();
-    //float * gradients = (float*)malloc(parameter_size);
-    //checkCUDA(cudaMemcpy(gradients, network[6]->params_gradients, parameter_size, cudaMemcpyDeviceToHost));
-    //for(int i=0; i<parameter_size/sizeof(float); i++)
-    //    std::cout << gradients[i] << " ";
-
-    //std::cout << std::endl;
     }
     cudaDeviceSynchronize();
     (MPI_Finalize());
