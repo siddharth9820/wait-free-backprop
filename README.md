@@ -87,3 +87,7 @@ with profiling, just use
 instead of the usual no-argument run. This script works by generating a number of boilerplate
 singleton batch scripts, sinilar to `submit.sh` and `submit-ddp.sh` and then running the sbatch
 command on them.
+
+# Plots
+To see the code used to generate the plots in the final report, see `scaling-plots.ipynb`. This notebook
+should contain all the code _and_ data necessary to gnerate these plots.
