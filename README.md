@@ -62,9 +62,13 @@ Once you have the script confiured to your liking, you can submit it like any ot
 
 ```sbatch submit.sh```
 
-In order to obtain single GPU timings, specify `-np 1` in the `mpirun` command like so
+In order to obtain single GPU timings, use the following command 
 
 ```mpirun -np 1 ./multi_GPU_VanillaBP```
+
+For sanity check on MNIST, use the following command
+
+```mpirun -np 1 ./single_gpu```
 
 ### Submit DDP
 
