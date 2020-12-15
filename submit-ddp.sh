@@ -17,11 +17,11 @@ NPROC_PER_NODE=2
 #You will want to replace this
 COMMAND="pytorchDDP.py --batches 192 --cuda --dist_backend gloo"
 
-#We want names of master and slave nodes
+#We want names of master and worker nodes
 MASTER=`/bin/hostname -s`
-SLAVES=`scontrol show hostnames $SLURM_JOB_NODELIST | grep -v $MASTER`
+WORKERS=`scontrol show hostnames $SLURM_JOB_NODELIST | grep -v $MASTER`
 #Make sure this node (MASTER) comes first
-HOSTLIST="$MASTER $SLAVES"
+HOSTLIST="$MASTER $WORKERS"
 echo $HOSTLIST
 
 #Get a random unused port on this host(MASTER) between 2000 and 9999
@@ -35,10 +35,10 @@ echo $HOSTLIST
 MPORT='10000'
 
 #Launch the pytorch processes, first on master (first in $HOSTLIST) then
-#on the slaves
+#on the workers
 
 RANK=1
-for node in $SLAVES; do
+for node in $WORKERS; do
         ssh -q $node "module load pytorch && cd /lustre/ssingh37/Acads/CMSC818x/wait-free-backprop && \
                 python -m torch.distributed.launch \
                 --nproc_per_node=$NPROC_PER_NODE \
