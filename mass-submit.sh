@@ -39,7 +39,7 @@ NCCL_IB_DISABLE=1 NCCL_SOCKET_IFNAME=eno1\
 }
 
 for bin in multi_GPU_wfbp multi_GPU_VanillaBP ; do
-    for n_gpus in 2 4 6 8 10 12 ; do
+    for n_gpus in 1 2 4 6 8 10 12 ; do
         build_submit $bin $n_gpus
     done
 done
